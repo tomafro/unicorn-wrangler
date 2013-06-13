@@ -8,12 +8,13 @@ module Unicorn
       @command = command
       @pidfile = File.expand_path(options[:pidfile] || 'unicorn.pid')
       @startup_period = options[:startup] || 60
+      @keep_unicorn = options[:keep_unicorn]
     end
 
     def start
       trap_signals(:HUP) { restart_unicorn }
       trap_signals(:QUIT, :INT, :TERM) do |signal|
-        Process.kill signal, unicorn_pid if unicorn_running?
+        Process.kill signal, unicorn_pid if unicorn_running? && !@keep_unicorn
         exit
       end
 

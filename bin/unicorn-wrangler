@@ -16,6 +16,10 @@ OptionParser.new do |opts|
   opts.on("-s", "--startup-time STARTUP", "Time to wait for server to start") do |time|
     options[:startup] = time.to_i
   end
+
+  opts.on("-k", "--keep-unicorn-running", "Keep unicorn running on exit") do
+    options[:keep_unicorn] = true
+  end
 end.parse!(ARGV[0...command_index])
 
 launcher = Unicorn::Wrangler.new command, options
