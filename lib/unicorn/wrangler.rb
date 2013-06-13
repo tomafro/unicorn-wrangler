@@ -11,7 +11,11 @@ module Unicorn
     end
 
     def start
-      trap_signals(:QUIT, :INT, :TERM) { exit }
+      trap_signals(:HUP) { restart_unicorn }
+      trap_signals(:QUIT, :INT, :TERM) do |signal|
+        Process.kill signal, unicorn_pid if unicorn_running?
+        exit
+      end
 
       if unicorn_running?
         restart_unicorn
@@ -31,6 +35,7 @@ module Unicorn
     def trap_signals(*signals, &block)
       signals.map(&:to_s).each do |signal|
         trap(signal) do
+          puts "unicorn-wrangler #{Process.pid} received #{signal} (managing #{unicorn_pid})"
           block.call signal
         end
       end

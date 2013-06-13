@@ -54,25 +54,47 @@ describe Unicorn::Wrangler do
       start_wrangler
     end
 
-    it 'quits (but leaves unicorn running) on receiving QUIT signal' do
+    context 'on receiving HUP signal' do
+      before do
+        @original_pid = unicorn_pid
+        @original_response = perform_request
+        Process.kill :HUP, @wrangler_pid
+      end
+
+      it 'restarts unicorn on startup' do
+        sleep 3
+        unicorn_pid.should_not eql(@original_pid)
+      end
+
+      it 'continues serving requests from both unicorns' do
+        20.times.map { sleep 0.1; perform_request }.uniq.size.should eql(2)
+      end
+
+      it 'stops serving requests from original unicorn' do
+        sleep 3
+        perform_request.should_not eql(@original_response)
+      end
+    end
+
+    it 'quits on receiving QUIT signal' do
       Process.kill 'QUIT', @wrangler_pid
       sleep 1
       wrangler_running?.should_not be_true
-      unicorn_running?.should be_true
+      unicorn_running?.should_not be_true
     end
 
-    it 'quits (but leaves unicorn running) on receiving TERM signal' do
+    it 'quits on receiving TERM signal' do
       Process.kill 'TERM', @wrangler_pid
       sleep 1
       wrangler_running?.should_not be_true
-      unicorn_running?.should be_true
+      unicorn_running?.should_not be_true
     end
 
-    it 'quits (but leaves unicorn running) on receiving INT signal' do
+    it 'quits on receiving INT signal' do
       Process.kill 'INT', @wrangler_pid
       sleep 1
       wrangler_running?.should_not be_true
-      unicorn_running?.should be_true
+      unicorn_running?.should_not be_true
     end
 
     it 'quits if monitored unicorn process quits' do
@@ -81,7 +103,7 @@ describe Unicorn::Wrangler do
       wrangler_running?.should_not be_true
     end
 
-    it 'continues running after launch (so that process monitoring tools do not restart it)' do
+    it 'continues running unless unicorn process quits' do
       sleep 3
       wrangler_running?.should be_true
     end
