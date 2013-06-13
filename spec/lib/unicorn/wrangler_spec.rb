@@ -92,6 +92,11 @@ describe Unicorn::Wrangler do
       start_wrangler
       unicorn_running?.should be_true
     end
+
+    it 'launches unicorn with a new process group (so upstart does not clean it up)' do
+      start_wrangler
+      Process.getpgid(@wrangler_pid).should_not eql(Process.getpgid(unicorn_pid))
+    end
   end
 
   context 'when unicorn is already running' do

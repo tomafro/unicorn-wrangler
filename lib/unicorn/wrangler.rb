@@ -16,7 +16,7 @@ module Unicorn
       if unicorn_running?
         restart_unicorn
       else
-        Process.spawn(command)
+        Process.spawn(command, pgroup: true)
         wait_for { unicorn_running? }
       end
 
