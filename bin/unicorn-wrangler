@@ -1,0 +1,22 @@
+#!/usr/bin/env ruby
+
+require 'unicorn/wrangler'
+require 'optparse'
+
+options = {}
+
+command_index = ARGV.index("--")
+command = ARGV[command_index + 1..-1].join(" ")
+
+OptionParser.new do |opts|
+  opts.on("-p", "--pidfile PIDFILE", "Path to the main unicorn PIDFILE") do |pidfile|
+    options[:pidfile] = pidfile
+  end
+
+  opts.on("-s", "--startup-time STARTUP", "Time to wait for server to start") do |time|
+    options[:startup] = time.to_i
+  end
+end.parse!(ARGV[0...command_index])
+
+launcher = Unicorn::Wrangler.new command, options
+launcher.start
