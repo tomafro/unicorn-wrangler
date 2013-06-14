@@ -19,7 +19,7 @@ describe Unicorn::Wrangler do
   end
 
   def start_wrangler(extra = '')
-    @wrangler_pid = Process.spawn "#{wrangler_path} --startup-time 1 #{extra} -p spec/support/unicorn.pid -- #{unicorn_cmd}"
+    @wrangler_pid = Process.spawn "#{wrangler_path} --grace-period 1 -p spec/support/unicorn.pid -- #{unicorn_cmd}"
     sleep 1
   end
 
@@ -76,23 +76,23 @@ describe Unicorn::Wrangler do
       end
     end
 
-    it 'quits on receiving QUIT signal' do
+    it 'exits on receiving QUIT signal' do
       Process.kill 'QUIT', @wrangler_pid
-      sleep 1
+      sleep 2
       wrangler_running?.should_not be_true
       unicorn_running?.should_not be_true
     end
 
-    it 'quits on receiving TERM signal' do
+    it 'exits on receiving TERM signal' do
       Process.kill 'TERM', @wrangler_pid
-      sleep 1
+      sleep 2
       wrangler_running?.should_not be_true
       unicorn_running?.should_not be_true
     end
 
-    it 'quits on receiving INT signal' do
+    it 'exits on receiving INT signal' do
       Process.kill 'INT', @wrangler_pid
-      sleep 1
+      sleep 2
       wrangler_running?.should_not be_true
       unicorn_running?.should_not be_true
     end
@@ -143,33 +143,6 @@ describe Unicorn::Wrangler do
       start_wrangler
       sleep 3
       perform_request.should_not eql(original_response)
-    end
-  end
-
-  context 'when passed the --keep-unicorn flag' do
-    before :each do
-      start_wrangler '--keep-unicorn'
-    end
-
-    it 'keeps unicorn running after receiving QUIT signal' do
-      Process.kill 'QUIT', @wrangler_pid
-      sleep 1
-      wrangler_running?.should_not be_true
-      unicorn_running?.should be_true
-    end
-
-    it 'keeps unicorn running after receiving TERM signal' do
-      Process.kill 'TERM', @wrangler_pid
-      sleep 1
-      wrangler_running?.should_not be_true
-      unicorn_running?.should be_true
-    end
-
-    it 'keeps unicorn running after receiving INT signal' do
-      Process.kill 'INT', @wrangler_pid
-      sleep 1
-      wrangler_running?.should_not be_true
-      unicorn_running?.should be_true
     end
   end
 

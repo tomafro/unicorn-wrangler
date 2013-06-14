@@ -2,19 +2,18 @@ require "unicorn/wrangler/version"
 
 module Unicorn
   class Wrangler
-    attr_reader :command, :pidfile, :startup_period, :tick_period, :verbose
+    attr_reader :command, :pidfile, :grace_period
 
     def initialize(command, options = {})
       @command = command
       @pidfile = File.expand_path(options[:pidfile] || 'unicorn.pid')
-      @startup_period = options[:startup] || 60
-      @keep_unicorn = options[:keep_unicorn]
+      @grace_period = options[:grace_period] || 60
     end
 
     def start
       trap_signals(:HUP) { restart_unicorn }
       trap_signals(:QUIT, :INT, :TERM) do |signal|
-        Process.kill signal, unicorn_pid if unicorn_running? && !@keep_unicorn
+        kill_unicorn_after_delay
         exit
       end
 
@@ -46,7 +45,7 @@ module Unicorn
       original_pid = unicorn_pid
       Process.kill "USR2", unicorn_pid
       wait_for { unicorn_pid != original_pid }
-      sleep startup_period
+      sleep grace_period
       Process.kill "TERM", original_pid
     end
 
@@ -63,6 +62,17 @@ module Unicorn
     def wait_for(&block)
       until block.call
         sleep 0.1
+      end
+    end
+
+    def kill_unicorn_after_delay
+      if unicorn_running?
+        puts "Preparing to kill unicorn in #{grace_period} seconds"
+        unless fork
+          Process.setsid
+          sleep grace_period
+          Process.kill :TERM, unicorn_pid if unicorn_running?
+        end
       end
     end
   end
