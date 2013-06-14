@@ -16,6 +16,10 @@ OptionParser.new do |opts|
   opts.on("-g", "--grace-period PERIOD", "Time to wait before shutting down server") do |time|
     options[:grace_period] = time.to_i
   end
+
+  opts.on("-v", "--verbose", "Verbose output") do
+    options[:verbose] = true
+  end
 end.parse!(ARGV[0...command_index])
 
 launcher = Unicorn::Wrangler.new command, options
