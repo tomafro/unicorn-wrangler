@@ -3,86 +3,159 @@ require "unicorn/wrangler/version"
 module Unicorn
   class Wrangler
     attr_reader :command, :pidfile, :grace_period
-    attr_accessor :unicorn_pid
+    attr_accessor :unicorn
 
     def initialize(command, options = {})
       @command = command
       @pidfile = File.expand_path(options[:pidfile] || 'unicorn.pid')
       @grace_period = options[:grace_period] || 60
       @verbose = options[:verbose]
+      @unicorn = UnicornProcess.from_pidfile(@pidfile)
+    end
+
+    class UnicornProcess
+      attr_reader :pid, :pidfile
+
+      def initialize(pidfile)
+        @pidfile = pidfile
+        @pid = File.read(pidfile).to_i
+        recall_assassin
+      end
+
+      def running?
+        Process.getpgid(pid)
+      rescue Errno::ESRCH
+        false
+      end
+
+      def signal(msg)
+        puts "Sending signal #{msg} to #{pid}"
+        Process.kill msg, pid
+      end
+
+      def reload(grace_period)
+        signal "USR2"
+        sleep grace_period
+        reloaded_unicorn = UnicornProcess.from_pidfile(pidfile)
+        if reloaded_unicorn && pid != reloaded_unicorn.pid
+          terminate
+          reloaded_unicorn
+        else
+          raise "unicorn didn't reload correctly within grace period (was pid #{pid})"
+        end
+      end
+
+      def launch_assassin(grace_period)
+        if running? && !@assassin_launched
+          @assassin_launched = true
+          puts "preparing to kill unicorn #{pid} in #{grace_period} seconds"
+          unless fork
+            File.write(assassin_pidfile, Process.pid.to_s)
+
+            trap 'TERM' do
+              exit
+            end
+
+            Process.setsid
+            sleep grace_period
+            terminate
+            File.delete(assassin_pidfile)
+          end
+        end
+      end
+
+      def recall_assassin
+        if File.exist?(assassin_pidfile)
+          assassin_pid = File.read(assassin_pidfile).to_i
+          Process.kill 'TERM', assassin_pid
+        end
+      rescue Errno::ESRCH
+      end
+
+      def assassin_pidfile
+        pidfile + ".assassin"
+      end
+
+      def terminate
+        if running?
+          signal 'TERM'
+        else
+          "Attempt to terminate #{pid} failed as process not running"
+        end
+      end
+
+      def verbose(message)
+        self.class.verbose(message)
+      end
+
+      def self.verbose(message)
+        Unicorn::Wrangler.verbose(message)
+      end
+
+      def self.wait_for(&block)
+        until block.call
+          sleep 0.1
+        end
+      end
+
+      def self.start(pidfile, command)
+        Process.spawn(command, pgroup: true)
+        wait_for { File.exist?(pidfile) }
+        new(pidfile)
+      end
+
+      def self.from_pidfile(pidfile)
+        File.exist?(pidfile) && new(pidfile)
+      end
     end
 
     def start
-      trap_signals(:HUP) { restart_unicorn }
+      setup_signal_handlers
+
+      if unicorn && unicorn.running?
+        self.unicorn = reload_unicorn
+      else
+        self.unicorn = UnicornProcess.start(pidfile, command)
+        sleep grace_period
+      end
+
+      if unicorn.running?
+        verbose "Unicorn running on #{unicorn.pid}"
+        loop_while_unicorn_runs
+      else
+        verbose "Unable to start unicorn.  Exiting."
+      end
+    end
+
+    def setup_signal_handlers
+      trap_signals(:HUP) { reload_unicorn }
       trap_signals(:QUIT, :INT, :TERM) do |signal|
         kill_unicorn_after_delay
         exit
       end
-
-      if old_unicorn = old_pidfile_contents && process_running?(old_unicorn)
-        signal :QUIT, old_unicorn
-      end
-
-      self.unicorn_pid = pidfile_contents
-
-      if unicorn_pid && process_running?(unicorn_pid)
-        debug "running unicorn found at #{unicorn_pid}"
-        restart_unicorn
-      else
-        debug "no running unicorn found, starting new instance"
-        self.unicorn_pid = Process.spawn(command, pgroup: true)
-        wait_for { process_running?(unicorn_pid) }
-        debug "new instance started with PID #{unicorn_pid}"
-      end
-
-      loop do
-        unless process_running?(unicorn_pid)
-          debug "unicorn(#{unicorn_pid}) no longer running, quitting."
-          exit
-        end
-        sleep 1
-      end
     end
 
-    private
+    def reload_unicorn
+      self.unicorn = unicorn.reload(grace_period) if unicorn
+    end
+
+    def loop_while_unicorn_runs
+      loop do
+        if unicorn.running?
+          sleep 0.1
+        else
+          exit
+        end
+      end
+    end
 
     def trap_signals(*signals, &block)
       signals.map(&:to_s).each do |signal|
         trap(signal) do
-          debug "received #{signal} (managing #{unicorn_pid})"
+          verbose "received #{signal} (managing #{unicorn.pid})"
           block.call signal
         end
       end
-    end
-
-    def restart_unicorn
-      debug "restarting unicorn process at #{unicorn_pid}"
-      signal "USR2", unicorn_pid
-      wait_for { pidfile_contents && unicorn_pid != pidfile_contents }
-      debug "new master process started at #{pidfile_contents}"
-      sleep grace_period
-      signal "TERM", unicorn_pid
-      self.unicorn_pid = pidfile_contents
-    end
-
-    def pidfile_contents
-      File.exist?(pidfile) && File.read(pidfile).to_i
-    end
-
-    def old_pidfile_contents
-      File.exist?(pidfile + ".oldbin") && File.read(pidfile + ".oldbin").to_i
-    end
-
-    def signal(name, pid)
-      debug "signalling #{pid} with #{name}"
-      Process.kill name, pid
-    rescue Errno::ESRCH
-    end
-
-    def process_running?(pid)
-      pid && Process.getpgid(pid)
-    rescue Errno::ESRCH
-      false
     end
 
     def wait_for(&block)
@@ -92,17 +165,14 @@ module Unicorn
     end
 
     def kill_unicorn_after_delay
-      if process_running?(unicorn_pid)
-        unless fork
-          debug "preparing to kill unicorn #{unicorn_pid} in #{grace_period} seconds"
-          Process.setsid
-          sleep grace_period
-          signal :TERM, unicorn_pid if process_running?(unicorn_pid)
-        end
-      end
+      unicorn.launch_assassin(grace_period) if unicorn
     end
 
-    def debug(message)
+    def verbose(message)
+      self.class.verbose(message)
+    end
+
+    def self.verbose(message)
       puts message if @verbose
     end
   end
