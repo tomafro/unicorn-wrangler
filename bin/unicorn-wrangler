@@ -22,5 +22,5 @@ OptionParser.new do |opts|
   end
 end.parse!(ARGV[0...command_index])
 
-launcher = Unicorn::Wrangler.new command, options
+launcher = Unicorn::Wrangler::Main.new command, options
 launcher.start
