@@ -15,3 +15,5 @@ If unicorn is running, it reloads the running instance, then terminates the old 
 The wrangler will continue to run while the monitored unicorn process runs.  It will stop running shortly after unicorn stops.
 
 If the wrangler is manually stopped (by sending INT or TERM signals to its process), it forks a new 'assassin' process that will terminate unicorn after the grace period has passed.  This is so that quickly stopping and starting the wrangler will have the effect of reloading unicorn, not terminating and restarting it.
+
+Do not confuse with [unicorn_wrangler](https://github.com/grosser/unicorn_wrangler)
